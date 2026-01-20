@@ -57,8 +57,10 @@ async def health_check():
 
 
 # Import and include routers
-from app.api import apartments, transactions, listings
+from app.api import apartments, transactions, listings, analysis, recommendations
 
 app.include_router(apartments.router, prefix="/api/apartments", tags=["apartments"])
 app.include_router(transactions.router, prefix="/api/transactions", tags=["transactions"])
 app.include_router(listings.router, prefix="/api/listings", tags=["listings"])
+app.include_router(analysis.router, prefix="/api/analysis", tags=["analysis"])
+app.include_router(recommendations.router, prefix="/api/recommendations", tags=["recommendations"])
