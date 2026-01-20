@@ -20,12 +20,21 @@ logger = logging.getLogger(__name__)
 @dataclass
 class OpenSearchConfig:
     """OpenSearch connection configuration."""
-    host: str = "49.247.172.187"
+    host: str = ""
     port: int = 9200
-    username: str = "admin"
-    password: str = "admin"
+    username: str = ""
+    password: str = ""
     use_ssl: bool = False
     verify_certs: bool = False
+
+    def __post_init__(self):
+        """Load defaults from settings if not provided."""
+        if not self.host or not self.username:
+            settings = get_settings()
+            self.host = self.host or settings.opensearch_host
+            self.port = self.port or settings.opensearch_port
+            self.username = self.username or settings.opensearch_username
+            self.password = self.password or settings.opensearch_password
 
     @property
     def base_url(self) -> str:

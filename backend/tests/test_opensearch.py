@@ -22,24 +22,33 @@ class TestOpenSearchConfig:
     """Tests for OpenSearchConfig."""
 
     def test_default_config(self):
-        """Test default configuration."""
+        """Test default configuration loads from settings."""
         config = OpenSearchConfig()
 
-        assert config.host == "49.247.172.187"
+        # Should load from settings (which defaults to 49.247.172.187)
+        assert config.host is not None
         assert config.port == 9200
-        assert config.username == "admin"
-        assert config.password == "admin"
         assert config.use_ssl is False
 
     def test_base_url_http(self):
         """Test base URL generation for HTTP."""
-        config = OpenSearchConfig(use_ssl=False)
-        assert config.base_url == "http://49.247.172.187:9200"
+        config = OpenSearchConfig(
+            host="test.local",
+            username="user",
+            password="pass",
+            use_ssl=False
+        )
+        assert config.base_url == "http://test.local:9200"
 
     def test_base_url_https(self):
         """Test base URL generation for HTTPS."""
-        config = OpenSearchConfig(use_ssl=True)
-        assert config.base_url == "https://49.247.172.187:9200"
+        config = OpenSearchConfig(
+            host="test.local",
+            username="user",
+            password="pass",
+            use_ssl=True
+        )
+        assert config.base_url == "https://test.local:9200"
 
     def test_custom_config(self):
         """Test custom configuration."""

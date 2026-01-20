@@ -19,12 +19,18 @@ class Settings(BaseSettings):
     # Redis (Upstash)
     redis_url: str = ""
 
-    # Public Data API
+    # Public Data API (국토교통부 실거래가)
     public_data_api_key: str = ""
 
     # Payment (TossPayments)
     toss_client_key: str = ""
     toss_secret_key: str = ""
+
+    # OpenSearch
+    opensearch_host: str = "49.247.172.187"
+    opensearch_port: int = 9200
+    opensearch_username: str = "admin"
+    opensearch_password: str = "admin"
 
     # Crawler
     proxy_list: str = ""  # comma-separated proxy URLs
