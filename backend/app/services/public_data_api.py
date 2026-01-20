@@ -9,6 +9,7 @@ import xml.etree.ElementTree as ET
 from datetime import date
 from typing import Optional, List
 from dataclasses import dataclass
+from urllib.parse import urlencode, unquote
 
 import httpx
 
@@ -34,7 +35,8 @@ class TransactionData:
 class PublicDataAPIClient:
     """Client for Korea's Open Data Portal apartment transaction API."""
 
-    BASE_URL = "http://openapi.molit.go.kr/OpenAPI_ToolInstall498/service/rest/RTMSOBJSvc/getRTMSDataSvcAptTradeDev"
+    # 국토교통부 아파트매매 실거래가 API (새 URL 형식)
+    BASE_URL = "https://apis.data.go.kr/1613000/RTMSDataSvcAptTradeDev/getRTMSDataSvcAptTradeDev"
 
     def __init__(self, api_key: Optional[str] = None):
         """Initialize the API client.
@@ -44,7 +46,9 @@ class PublicDataAPIClient:
                      it will be loaded from settings.
         """
         settings = get_settings()
-        self.api_key = api_key or settings.public_data_api_key
+        raw_key = api_key or settings.public_data_api_key
+        # Decode the API key if it's URL-encoded (data.go.kr provides encoded keys)
+        self.api_key = unquote(raw_key)
         self.client = httpx.AsyncClient(timeout=30.0)
 
     async def close(self):
@@ -78,16 +82,22 @@ class PublicDataAPIClient:
         Raises:
             PublicDataAPIError: If API request fails
         """
-        params = {
-            "serviceKey": self.api_key,
-            "LAWD_CD": lawd_cd,
-            "DEAL_YMD": deal_ymd,
-            "numOfRows": num_of_rows,
-            "pageNo": page_no,
-        }
+        # Build URL with serviceKey directly to avoid encoding issues
+        # data.go.kr API keys are already URL-encoded
+        settings = get_settings()
+        raw_api_key = settings.public_data_api_key
+
+        url = (
+            f"{self.BASE_URL}"
+            f"?serviceKey={raw_api_key}"
+            f"&LAWD_CD={lawd_cd}"
+            f"&DEAL_YMD={deal_ymd}"
+            f"&numOfRows={num_of_rows}"
+            f"&pageNo={page_no}"
+        )
 
         try:
-            response = await self.client.get(self.BASE_URL, params=params)
+            response = await self.client.get(url)
             response.raise_for_status()
         except httpx.HTTPError as e:
             raise PublicDataAPIError(f"HTTP error: {e}") from e
