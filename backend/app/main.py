@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.database import init_db
+from app.auth.middleware import AuthMiddleware, RateLimitMiddleware
 
 
 settings = get_settings()
@@ -26,7 +27,8 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS middleware
+# Middleware (order matters - first added = outermost)
+# 1. CORS (outermost)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # Configure properly in production
@@ -34,6 +36,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# 2. Rate limiting (after auth, before handlers)
+app.add_middleware(RateLimitMiddleware)
+
+# 3. Auth (extracts user from token)
+app.add_middleware(AuthMiddleware)
 
 
 @app.get("/")
