@@ -15,6 +15,7 @@ from app.crawler.naver import NaverRealEstateCrawler, NaverListing
 from app.services.public_data_api import PublicDataAPIClient, REGION_CODES
 from app.services.notifications import get_notification_service
 from app.services.cache import get_cache_service, CacheKeys
+from app.services.sync import run_sync_job
 from app.analysis.comparison import ComparisonAnalyzer
 from app.config import get_settings
 
@@ -45,10 +46,13 @@ class DailyCollectionJob:
             # 3. Run analysis
             await self.run_analysis()
 
-            # 4. Check alerts
+            # 4. Sync data to OpenSearch
+            await self.sync_to_opensearch()
+
+            # 5. Check alerts
             await self.check_alerts()
 
-            # 5. Clear old cache
+            # 6. Clear old cache
             await self.cleanup_cache()
 
             logger.info("Daily collection job completed successfully")
@@ -149,6 +153,21 @@ class DailyCollectionJob:
         #     await self.save_analysis_result(report)
 
         logger.info("Analysis completed")
+
+    async def sync_to_opensearch(self):
+        """Sync data to OpenSearch for search and analytics."""
+        logger.info("Syncing data to OpenSearch...")
+
+        try:
+            # Run incremental sync (only changes since last sync)
+            results = await run_sync_job(full=False)
+
+            total_synced = sum(r.synced_records for r in results)
+            logger.info(f"OpenSearch sync completed: {total_synced} records synced")
+
+        except Exception as e:
+            logger.error(f"OpenSearch sync failed: {e}")
+            # Don't raise - sync failure shouldn't stop other jobs
 
     async def check_alerts(self):
         """Check for alert matches and send notifications."""
