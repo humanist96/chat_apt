@@ -9,7 +9,7 @@ asyncpg==0.29.0
 alembic==1.13.1
 
 # HTTP Client
-httpx==0.26.0
+httpx>=0.24.0,<0.26
 beautifulsoup4==4.12.3
 
 # Browser Automation

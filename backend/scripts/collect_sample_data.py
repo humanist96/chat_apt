@@ -9,8 +9,12 @@ import random
 from datetime import date, datetime
 from typing import List
 import logging
+from pathlib import Path
 
-sys.path.insert(0, '/home/user/chat_apt/backend')
+# Add backend directory to path dynamically
+SCRIPT_DIR = Path(__file__).resolve().parent
+BACKEND_DIR = SCRIPT_DIR.parent
+sys.path.insert(0, str(BACKEND_DIR))
 
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker

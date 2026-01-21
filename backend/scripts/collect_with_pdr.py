@@ -17,8 +17,12 @@ from datetime import date, datetime
 from typing import List, Optional
 import logging
 import os
+from pathlib import Path
 
-sys.path.insert(0, '/home/user/chat_apt/backend')
+# Add backend directory to path dynamically
+SCRIPT_DIR = Path(__file__).resolve().parent
+BACKEND_DIR = SCRIPT_DIR.parent
+sys.path.insert(0, str(BACKEND_DIR))
 
 import pandas as pd
 from PublicDataReader import TransactionPrice
@@ -28,21 +32,33 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 
 from app.models.apartment import Apartment, Transaction, Listing
-from app.database import Base
 from app.config import get_settings
+from sqlalchemy.orm import DeclarativeBase
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Database URL (SQLite for local testing)
-DATABASE_URL = "sqlite+aiosqlite:///./chat_apt.db"
+# Database URL (from environment variable, defaults to SQLite for local testing)
+DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite+aiosqlite:///./chat_apt.db")
+
+# Convert PostgreSQL URL to async format (postgresql:// → postgresql+asyncpg://)
+if DATABASE_URL.startswith("postgresql://"):
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
+
+
+# Create a local Base for SQLite-compatible tables only
+class LocalBase(DeclarativeBase):
+    pass
 
 
 async def init_database(engine):
-    """Create all tables."""
+    """Create only apartment-related tables (SQLite compatible)."""
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    logger.info("Database tables created")
+        # Only create apartment-related tables, not user tables with UUID
+        await conn.run_sync(lambda sync_conn: Apartment.__table__.create(sync_conn, checkfirst=True))
+        await conn.run_sync(lambda sync_conn: Transaction.__table__.create(sync_conn, checkfirst=True))
+        await conn.run_sync(lambda sync_conn: Listing.__table__.create(sync_conn, checkfirst=True))
+    logger.info("Database tables created (apartments, transactions, listings)")
 
 
 def get_api_client() -> TransactionPrice:
