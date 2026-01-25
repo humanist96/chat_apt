@@ -153,11 +153,11 @@ class TestPublicDataAPIClient:
             assert len(transactions) == 2
             assert transactions[0].apartment_name == "래미안역삼"
 
-            # Verify API was called with correct params
+            # Verify API was called with correct URL params
             mock_get.assert_called_once()
-            call_kwargs = mock_get.call_args
-            assert call_kwargs[1]["params"]["LAWD_CD"] == "11680"
-            assert call_kwargs[1]["params"]["DEAL_YMD"] == "202401"
+            call_url = mock_get.call_args[0][0]
+            assert "LAWD_CD=11680" in call_url
+            assert "DEAL_YMD=202401" in call_url
 
         await client.close()
 

@@ -25,8 +25,8 @@ class TestRequestDelay:
         """Test default delay configuration."""
         delay = RequestDelay()
 
-        assert delay.min_delay == 1.0
-        assert delay.max_delay == 3.0
+        assert delay.min_delay == 3.0
+        assert delay.max_delay == 8.0
         assert delay.use_gaussian is True
 
     def test_get_delay_range(self):
