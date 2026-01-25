@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react'
 import { RecommendationCard } from './RecommendationCard'
 import { Loader2 } from 'lucide-react'
+import { api } from '@/lib/api'
+import type { FireSale } from '@/types'
 
 interface Filters {
   dongCode: string
@@ -28,53 +30,31 @@ interface RecommendationListProps {
   filters: Filters
 }
 
-// Mock data for demo (will be replaced with API call)
-const MOCK_RECOMMENDATIONS: Recommendation[] = [
-  {
-    listing_id: 1,
-    apartment_id: 101,
-    apartment_name: '래미안 대치팰리스',
-    listing_price: 235000,
-    area: 84.95,
-    price_per_pyeong: 9150,
-    recommendation_score: 87.5,
-    discount_percent: -8.3,
-    rank: 1,
-  },
-  {
-    listing_id: 2,
-    apartment_id: 102,
-    apartment_name: '은마아파트',
-    listing_price: 185000,
-    area: 76.79,
-    price_per_pyeong: 7960,
-    recommendation_score: 82.1,
-    discount_percent: -6.2,
-    rank: 2,
-  },
-  {
-    listing_id: 3,
-    apartment_id: 103,
-    apartment_name: '잠실엘스',
-    listing_price: 275000,
-    area: 84.82,
-    price_per_pyeong: 10720,
-    recommendation_score: 79.8,
-    discount_percent: -5.1,
-    rank: 3,
-  },
-  {
-    listing_id: 4,
-    apartment_id: 104,
-    apartment_name: '반포자이',
-    listing_price: 320000,
-    area: 114.5,
-    price_per_pyeong: 9230,
-    recommendation_score: 76.4,
-    discount_percent: -4.5,
-    rank: 4,
-  },
-]
+// Convert area (m²) to pyeong
+const toPyeong = (areaM2: number): number => areaM2 / 3.30579
+
+// Convert fire sale data to recommendation format
+const convertFireSaleToRecommendation = (
+  fireSale: FireSale,
+  rank: number
+): Recommendation => {
+  const areaPyeong = toPyeong(fireSale.area)
+  const pricePerPyeong = Math.round(fireSale.asking_price / areaPyeong)
+  // Higher discount = higher recommendation score (base 60 + up to 40 bonus)
+  const recommendationScore = Math.min(100, 60 + fireSale.discount_rate * 2)
+
+  return {
+    listing_id: fireSale.listing_id,
+    apartment_id: fireSale.apartment_id,
+    apartment_name: fireSale.apartment_name,
+    listing_price: fireSale.asking_price,
+    area: fireSale.area,
+    price_per_pyeong: pricePerPyeong,
+    recommendation_score: Math.round(recommendationScore * 10) / 10,
+    discount_percent: -fireSale.discount_rate, // Negative because it's below market
+    rank,
+  }
+}
 
 export function RecommendationList({ filters }: RecommendationListProps) {
   const [recommendations, setRecommendations] = useState<Recommendation[]>([])
@@ -87,19 +67,41 @@ export function RecommendationList({ filters }: RecommendationListProps) {
       setError(null)
 
       try {
-        // TODO: Replace with actual API call
-        // const params = new URLSearchParams()
-        // if (filters.dongCode) params.append('dong_code', filters.dongCode)
-        // if (filters.minPrice) params.append('min_price', filters.minPrice.toString())
-        // if (filters.maxPrice) params.append('max_price', filters.maxPrice.toString())
-        // const response = await fetch(`/api/recommendations/top?${params}`)
-        // const data = await response.json()
-        // setRecommendations(data.recommendations)
+        // Fetch fire sales as recommendations (undervalued listings)
+        const dongCode = filters.dongCode || undefined
+        const { fire_sales } = await api.getFireSales(dongCode, 10, 20)
 
-        // Mock delay and data for demo
-        await new Promise((resolve) => setTimeout(resolve, 500))
-        setRecommendations(MOCK_RECOMMENDATIONS)
+        // Filter by price and area if specified
+        let filteredSales = fire_sales
+        if (filters.minPrice) {
+          filteredSales = filteredSales.filter(
+            (fs) => fs.asking_price >= filters.minPrice!
+          )
+        }
+        if (filters.maxPrice) {
+          filteredSales = filteredSales.filter(
+            (fs) => fs.asking_price <= filters.maxPrice!
+          )
+        }
+        if (filters.minArea) {
+          filteredSales = filteredSales.filter(
+            (fs) => fs.area >= filters.minArea!
+          )
+        }
+        if (filters.maxArea) {
+          filteredSales = filteredSales.filter(
+            (fs) => fs.area <= filters.maxArea!
+          )
+        }
+
+        // Convert to recommendation format and take top 4
+        const converted = filteredSales
+          .slice(0, 4)
+          .map((fs, idx) => convertFireSaleToRecommendation(fs, idx + 1))
+
+        setRecommendations(converted)
       } catch (err) {
+        console.error('Failed to fetch recommendations:', err)
         setError('데이터를 불러오는데 실패했습니다.')
       } finally {
         setIsLoading(false)

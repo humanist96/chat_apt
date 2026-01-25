@@ -2,11 +2,12 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 
 from app.database import get_db
-from app.models.apartment import Listing
+from app.models.apartment import Listing, Apartment
 
 
 router = APIRouter()
@@ -17,6 +18,9 @@ class ListingResponse(BaseModel):
     id: int
     apartment_id: int
     article_no: Optional[str] = None
+    naver_complex_no: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
     trade_type: Optional[str] = None
     price: int
     area: Optional[float] = None
@@ -28,6 +32,38 @@ class ListingResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+def listing_to_response(listing: Listing) -> ListingResponse:
+    """Convert Listing model to response with apartment's complex_no and coordinates fallback."""
+    # Use listing's naver_complex_no, fallback to apartment's
+    complex_no = listing.naver_complex_no
+    latitude = None
+    longitude = None
+
+    if listing.apartment:
+        if not complex_no:
+            complex_no = listing.apartment.naver_complex_no
+        # Get coordinates from apartment
+        latitude = float(listing.apartment.latitude) if listing.apartment.latitude else None
+        longitude = float(listing.apartment.longitude) if listing.apartment.longitude else None
+
+    return ListingResponse(
+        id=listing.id,
+        apartment_id=listing.apartment_id,
+        article_no=listing.article_no,
+        naver_complex_no=complex_no,
+        latitude=latitude,
+        longitude=longitude,
+        trade_type=listing.trade_type,
+        price=listing.price,
+        area=float(listing.area) if listing.area else None,
+        floor=listing.floor,
+        direction=listing.direction,
+        description=listing.description,
+        realtor_name=listing.realtor_name,
+        is_active=listing.is_active,
+    )
 
 
 class ListingCreate(BaseModel):
@@ -55,7 +91,11 @@ async def list_listings(
     db: AsyncSession = Depends(get_db),
 ):
     """List listings with optional filters."""
-    query = select(Listing).where(Listing.is_active == is_active)
+    query = (
+        select(Listing)
+        .options(selectinload(Listing.apartment))
+        .where(Listing.is_active == is_active)
+    )
 
     if apartment_id:
         query = query.where(Listing.apartment_id == apartment_id)
@@ -70,7 +110,7 @@ async def list_listings(
     result = await db.execute(query)
     listings = result.scalars().all()
 
-    return listings
+    return [listing_to_response(listing) for listing in listings]
 
 
 @router.get("/{listing_id}", response_model=ListingResponse)
@@ -80,14 +120,16 @@ async def get_listing(
 ):
     """Get listing by ID."""
     result = await db.execute(
-        select(Listing).where(Listing.id == listing_id)
+        select(Listing)
+        .options(selectinload(Listing.apartment))
+        .where(Listing.id == listing_id)
     )
     listing = result.scalar_one_or_none()
 
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
 
-    return listing
+    return listing_to_response(listing)
 
 
 @router.post("/", response_model=ListingResponse)

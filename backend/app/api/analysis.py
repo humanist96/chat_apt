@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from app.database import get_db
 from app.auth import get_current_user, get_current_user_optional, AuthenticatedUser, check_rate_limit
 from app.models.apartment import Apartment, Listing, SimilarApartment, MonthlyPriceCache
+from app.analysis.fire_sale import FireSaleDetector
 
 
 router = APIRouter()
@@ -57,6 +58,30 @@ class PriceTrendResponse(BaseModel):
     avg_price: int
     avg_price_per_pyeong: int
     transaction_count: int
+
+
+class FireSaleAnalysisResponse(BaseModel):
+    """Response schema for fire sale analysis."""
+    listing_id: int
+    apartment_id: int
+    apartment_name: str
+    dong_code: str
+    area: float
+    floor: Optional[int]
+    asking_price: int
+    all_time_high: int
+    all_time_high_date: str
+    discount_rate: float
+    urgency_level: str
+
+    class Config:
+        from_attributes = True
+
+
+class FireSalesListResponse(BaseModel):
+    """Response schema for fire sales list."""
+    fire_sales: List[FireSaleAnalysisResponse]
+    total_count: int
 
 
 @router.get("/similar/{apartment_id}", response_model=List[SimilarApartmentResponse])
@@ -240,3 +265,92 @@ async def get_price_trend(
         )
         for p in prices
     ]
+
+
+@router.get("/fire-sales", response_model=FireSalesListResponse)
+async def get_fire_sales(
+    dong_code: Optional[str] = Query(None, description="Filter by dong code"),
+    min_discount_rate: float = Query(15.0, ge=0, le=100, description="Minimum discount rate"),
+    limit: int = Query(50, ge=1, le=200, description="Maximum results"),
+    user: Optional[AuthenticatedUser] = Depends(get_current_user_optional),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get potential fire sale listings.
+
+    Returns listings with significant discount from all-time high prices.
+    - 20%+ discount: HIGH urgency
+    - 15%+ discount: MEDIUM urgency
+    - 10%+ discount: LOW urgency
+
+    Public endpoint but with rate limiting for authenticated users.
+    """
+    if user:
+        await check_rate_limit(user.id, user.membership_tier, "analysis")
+
+    detector = FireSaleDetector()
+
+    fire_sales = await detector.find_fire_sales(
+        db=db,
+        dong_code=dong_code,
+        min_discount_rate=min_discount_rate,
+        limit=limit,
+    )
+
+    return FireSalesListResponse(
+        fire_sales=[
+            FireSaleAnalysisResponse(
+                listing_id=fs.listing_id,
+                apartment_id=fs.apartment_id,
+                apartment_name=fs.apartment_name,
+                dong_code=fs.dong_code,
+                area=fs.area,
+                floor=fs.floor,
+                asking_price=fs.asking_price,
+                all_time_high=fs.all_time_high,
+                all_time_high_date=fs.all_time_high_date,
+                discount_rate=fs.discount_rate,
+                urgency_level=fs.urgency_level,
+            )
+            for fs in fire_sales
+        ],
+        total_count=len(fire_sales),
+    )
+
+
+@router.get("/fire-sales/{listing_id}", response_model=FireSaleAnalysisResponse)
+async def get_fire_sale_analysis(
+    listing_id: int,
+    user: Optional[AuthenticatedUser] = Depends(get_current_user_optional),
+    db: AsyncSession = Depends(get_db),
+):
+    """Analyze a specific listing for fire sale potential.
+
+    Returns detailed analysis comparing the listing price against
+    historical all-time high transaction prices.
+    """
+    if user:
+        await check_rate_limit(user.id, user.membership_tier, "analysis")
+
+    detector = FireSaleDetector()
+
+    analysis = await detector.analyze_listing(db=db, listing_id=listing_id)
+
+    if not analysis:
+        raise HTTPException(
+            status_code=404,
+            detail="Listing not found or no historical data available for comparison",
+        )
+
+    return FireSaleAnalysisResponse(
+        listing_id=analysis.listing_id,
+        apartment_id=analysis.apartment_id,
+        apartment_name=analysis.apartment_name,
+        dong_code=analysis.dong_code,
+        area=analysis.area,
+        floor=analysis.floor,
+        asking_price=analysis.asking_price,
+        all_time_high=analysis.all_time_high,
+        all_time_high_date=analysis.all_time_high_date,
+        discount_rate=analysis.discount_rate,
+        urgency_level=analysis.urgency_level,
+    )

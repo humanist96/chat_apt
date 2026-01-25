@@ -6,14 +6,22 @@ import { RecommendationList } from '@/components/recommendations/RecommendationL
 import { PricingSection } from '@/components/home/PricingSection'
 import { FeatureSection } from '@/components/home/FeatureSection'
 
+interface Filters {
+  dongCode: string
+  minPrice?: number
+  maxPrice?: number
+  minArea?: number
+  maxArea?: number
+}
+
 export default function HomePage() {
-  const [filters, setFilters] = useState({
+  const [filters, setFilters] = useState<Filters>({
     dongCode: '',
-    minPrice: undefined as number | undefined,
-    maxPrice: undefined as number | undefined,
-    minArea: undefined as number | undefined,
-    maxArea: undefined as number | undefined,
   })
+
+  const handleFiltersChange = (newFilters: Filters) => {
+    setFilters(newFilters)
+  }
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -32,7 +40,7 @@ export default function HomePage() {
       {/* Search Section */}
       <section className="bg-white rounded-xl shadow-lg p-6 mb-8">
         <h2 className="text-xl font-semibold mb-4">매물 검색</h2>
-        <SearchFilters filters={filters} onFiltersChange={setFilters} />
+        <SearchFilters filters={filters} onFiltersChange={handleFiltersChange} />
       </section>
 
       {/* Recommendations */}

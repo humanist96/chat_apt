@@ -3,7 +3,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from app.auth.middleware import get_current_user
+from app.auth import get_current_user
 from app.services.opensearch import (
     OpenSearchClient,
     ApartmentSearchService,

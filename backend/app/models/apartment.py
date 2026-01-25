@@ -74,6 +74,7 @@ class Listing(Base):
         Integer, ForeignKey("apartments.id"), index=True
     )
     article_no: Mapped[Optional[str]] = mapped_column(String(30), unique=True)
+    naver_complex_no: Mapped[Optional[str]] = mapped_column(String(20))
     trade_type: Mapped[Optional[str]] = mapped_column(String(10))
     price: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
     area: Mapped[Optional[Decimal]] = mapped_column(DECIMAL(10, 2))

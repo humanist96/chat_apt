@@ -67,8 +67,33 @@ async def get_db() -> AsyncSession:
 async def init_db():
     """Initialize database tables."""
     engine = get_engine()
+
+    # Check if using SQLite (which doesn't support UUID type)
+    is_sqlite = "sqlite" in str(engine.url)
+
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+        if is_sqlite:
+            # For SQLite, only create tables that don't use PostgreSQL-specific types
+            from app.models.apartment import (
+                Apartment, Transaction, Listing, AnalysisResult,
+                SimilarApartment, ComparisonAnalysis, MonthlyPriceCache
+            )
+            tables_to_create = [
+                Apartment.__table__,
+                Transaction.__table__,
+                Listing.__table__,
+                AnalysisResult.__table__,
+                SimilarApartment.__table__,
+                ComparisonAnalysis.__table__,
+                MonthlyPriceCache.__table__,
+            ]
+            for table in tables_to_create:
+                await conn.run_sync(
+                    lambda sync_conn, t=table: t.create(sync_conn, checkfirst=True)
+                )
+        else:
+            # For PostgreSQL, create all tables
+            await conn.run_sync(Base.metadata.create_all)
 
 
 def reset_engine():

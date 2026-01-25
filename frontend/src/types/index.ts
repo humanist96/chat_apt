@@ -15,6 +15,9 @@ export interface Listing {
   id: number
   apartment_id: number
   article_no: string
+  naver_complex_no?: string
+  latitude?: number
+  longitude?: number
   trade_type: string
   price: number
   area: number
@@ -25,15 +28,31 @@ export interface Listing {
   is_active: boolean
 }
 
+// Generate Naver Real Estate URL
+// Format: https://new.land.naver.com/complexes/{complex_no}?ms={lat},{lng},{zoom}&a=APT&e=RETAIL
+export const getNaverListingUrl = (
+  complexNo?: string,
+  latitude?: number,
+  longitude?: number
+): string | null => {
+  if (!complexNo) return null
+
+  const baseUrl = `https://new.land.naver.com/complexes/${complexNo}`
+
+  // Add map state if coordinates available
+  if (latitude && longitude) {
+    return `${baseUrl}?ms=${latitude},${longitude},17&a=APT&e=RETAIL`
+  }
+  return baseUrl
+}
+
 export interface Transaction {
   id: number
   apartment_id: number
   deal_amount: number
   area: number
-  floor: number
-  deal_year: number
-  deal_month: number
-  deal_day: number
+  floor: number | null
+  deal_date: string  // "YYYY-MM-DD" format from backend
 }
 
 export interface Recommendation {
@@ -128,4 +147,56 @@ export interface ApiResponse<T> {
 export interface ApiError {
   detail: string
   status_code: number
+}
+
+// Fire Sale Types
+
+export interface FireSale {
+  listing_id: number
+  apartment_id: number
+  apartment_name: string
+  dong_code: string
+  area: number
+  floor: number | null
+  asking_price: number
+  all_time_high: number
+  all_time_high_date: string
+  discount_rate: number
+  urgency_level: 'HIGH' | 'MEDIUM' | 'LOW'
+  article_no?: string
+  naver_complex_no?: string
+  latitude?: number
+  longitude?: number
+}
+
+export interface FireSalesResponse {
+  fire_sales: FireSale[]
+  total_count: number
+}
+
+// Dashboard Stats Types
+
+export interface DashboardStats {
+  total_apartments: number
+  total_listings: number
+  total_transactions: number
+  fire_sale_count: number
+  regions: RegionStats[]
+}
+
+export interface RegionStats {
+  dong_code: string
+  dong_name: string
+  listing_count: number
+  avg_price: number
+}
+
+// Region mapping
+export const DONG_CODE_NAMES: Record<string, string> = {
+  '11680': '강남구',
+  '11650': '서초구',
+  '11710': '송파구',
+  '11740': '강동구',
+  '11440': '마포구',
+  '11170': '용산구',
 }

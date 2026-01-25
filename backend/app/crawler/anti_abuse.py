@@ -17,11 +17,11 @@ from app.config import get_settings
 class RequestDelay:
     """Configurable delay generator for humanizing request patterns."""
 
-    min_delay: float = 1.0  # Minimum delay in seconds
-    max_delay: float = 3.0  # Maximum delay in seconds
+    min_delay: float = 3.0  # Minimum delay in seconds
+    max_delay: float = 8.0  # Maximum delay in seconds
     use_gaussian: bool = True  # Use Gaussian distribution
-    mean: float = 2.0  # Mean for Gaussian
-    std_dev: float = 0.5  # Standard deviation for Gaussian
+    mean: float = 5.0  # Mean for Gaussian
+    std_dev: float = 1.5  # Standard deviation for Gaussian
 
     def get_delay(self) -> float:
         """Generate a randomized delay.
