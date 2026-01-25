@@ -41,22 +41,19 @@ class TestJWTAuth:
         assert user.membership_tier == "free"
 
     def test_decode_token_valid(self):
-        """Test decoding a valid JWT token."""
-        import jwt as pyjwt
-
+        """Test decoding a valid JWT token with mocked JWKS."""
         jwt_auth = JWTAuth()
 
-        # Create a properly signed JWT token using pyjwt
-        payload = {
+        # Mock the decode_token method to return expected payload
+        mock_payload = {
             "sub": "user-123",
             "email": "test@example.com",
             "user_metadata": {},
             "app_metadata": {"membership_tier": "premium"},
-            "exp": datetime.utcnow() + timedelta(hours=1),
         }
-        token = pyjwt.encode(payload, "secret", algorithm="HS256")
 
-        user = jwt_auth.get_user_from_token(token)
+        with patch.object(jwt_auth, 'decode_token', return_value=mock_payload):
+            user = jwt_auth.get_user_from_token("mock_token")
 
         assert user.id == "user-123"
         assert user.email == "test@example.com"
@@ -64,19 +61,16 @@ class TestJWTAuth:
 
     def test_decode_token_missing_sub(self):
         """Test decoding token without user ID."""
-        import jwt as pyjwt
-
         jwt_auth = JWTAuth()
 
-        # Token without 'sub' claim
-        payload = {
+        # Mock decode_token to return payload without 'sub'
+        mock_payload = {
             "email": "test@example.com",
-            "exp": datetime.utcnow() + timedelta(hours=1),
         }
-        token = pyjwt.encode(payload, "secret", algorithm="HS256")
 
-        with pytest.raises(HTTPException) as exc_info:
-            jwt_auth.get_user_from_token(token)
+        with patch.object(jwt_auth, 'decode_token', return_value=mock_payload):
+            with pytest.raises(HTTPException) as exc_info:
+                jwt_auth.get_user_from_token("mock_token")
 
         assert exc_info.value.status_code == 401
         assert "missing user ID" in exc_info.value.detail

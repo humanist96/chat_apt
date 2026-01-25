@@ -1,4 +1,7 @@
 """Payment API endpoints for subscription management."""
+import hmac
+import hashlib
+import logging
 from typing import Optional
 from datetime import datetime, timedelta
 from uuid import UUID
@@ -10,6 +13,7 @@ from pydantic import BaseModel
 
 from app.database import get_db
 from app.auth import get_current_user, AuthenticatedUser
+from app.config import get_settings
 from app.models.user import UserProfile
 from app.models.payment import Subscription, PaymentHistory
 from app.services.toss_payments import (
@@ -17,6 +21,41 @@ from app.services.toss_payments import (
     TossPaymentsError,
     SUBSCRIPTION_PLANS,
 )
+
+logger = logging.getLogger(__name__)
+
+
+def verify_toss_webhook_signature(signature: str, body: bytes) -> bool:
+    """Verify TossPayments webhook signature.
+
+    TossPayments signs webhooks using HMAC-SHA256 with the secret key.
+
+    Args:
+        signature: The X-Toss-Signature header value
+        body: Raw request body bytes
+
+    Returns:
+        True if signature is valid, False otherwise
+    """
+    if not signature:
+        return False
+
+    settings = get_settings()
+    secret_key = settings.toss_secret_key
+
+    if not secret_key:
+        logger.error("TOSS_SECRET_KEY not configured for webhook verification")
+        return False
+
+    # TossPayments uses HMAC-SHA256
+    expected_signature = hmac.new(
+        secret_key.encode("utf-8"),
+        body,
+        hashlib.sha256
+    ).hexdigest()
+
+    # Use constant-time comparison to prevent timing attacks
+    return hmac.compare_digest(signature, expected_signature)
 
 
 router = APIRouter()
@@ -241,7 +280,7 @@ async def reactivate_subscription(
         select(Subscription)
         .where(Subscription.user_id == UUID(user.id))
         .where(Subscription.status == "active")
-        .where(Subscription.cancel_at_period_end == True)
+        .where(Subscription.cancel_at_period_end.is_(True))
     )
     subscription = result.scalar_one_or_none()
 
@@ -286,13 +325,39 @@ async def payment_webhook(
     - Payment status changes
     - Subscription renewals
     - Failed payments
+
+    Security: Verifies webhook signature using HMAC-SHA256.
     """
-    body = await request.json()
-    event_type = body.get("eventType")
+    # Get raw body for signature verification
+    body = await request.body()
+
+    # Verify webhook signature
+    signature = request.headers.get("X-Toss-Signature", "")
+    if not verify_toss_webhook_signature(signature, body):
+        logger.warning(
+            f"Invalid webhook signature from {request.client.host if request.client else 'unknown'}"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid webhook signature",
+        )
+
+    # Parse the verified body
+    import json
+    try:
+        data = json.loads(body)
+    except json.JSONDecodeError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid JSON body",
+        )
+
+    event_type = data.get("eventType")
+    logger.info(f"Received webhook event: {event_type}")
 
     if event_type == "PAYMENT_STATUS_CHANGED":
-        payment_key = body.get("data", {}).get("paymentKey")
-        status_val = body.get("data", {}).get("status")
+        payment_key = data.get("data", {}).get("paymentKey")
+        status_val = data.get("data", {}).get("status")
 
         # Update payment record if exists
         result = await db.execute(
@@ -303,6 +368,21 @@ async def payment_webhook(
 
         if payment:
             payment.status = status_val.lower() if status_val else None
+            logger.info(f"Updated payment {payment_key} status to {status_val}")
+
+    elif event_type == "BILLING_KEY_DELETED":
+        # Handle billing key deletion (subscription cancelled externally)
+        billing_key = data.get("data", {}).get("billingKey")
+        if billing_key:
+            result = await db.execute(
+                select(Subscription)
+                .where(Subscription.billing_key == billing_key)
+                .where(Subscription.status == "active")
+            )
+            subscription = result.scalar_one_or_none()
+            if subscription:
+                subscription.status = "cancelled"
+                logger.info(f"Cancelled subscription for billing key {billing_key[:8]}...")
 
     return {"status": "ok"}
 

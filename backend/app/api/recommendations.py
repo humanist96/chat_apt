@@ -1,10 +1,9 @@
 """Recommendations API endpoints."""
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
-from datetime import date
 
 from app.database import get_db
 from app.auth import get_current_user, AuthenticatedUser, check_rate_limit
@@ -59,7 +58,7 @@ async def get_top_recommendations(
         select(Listing, Apartment, AnalysisResult)
         .join(Apartment, Listing.apartment_id == Apartment.id)
         .join(AnalysisResult, AnalysisResult.listing_id == Listing.id)
-        .where(Listing.is_active == True)
+        .where(Listing.is_active.is_(True))
         .where(AnalysisResult.recommendation_score >= min_score)
     )
 
@@ -149,7 +148,7 @@ async def get_undervalued_listings(
         select(Listing, Apartment, AnalysisResult)
         .join(Apartment, Listing.apartment_id == Apartment.id)
         .join(AnalysisResult, AnalysisResult.listing_id == Listing.id)
-        .where(Listing.is_active == True)
+        .where(Listing.is_active.is_(True))
         .where(AnalysisResult.discount_rate <= max_gap_percent)
     )
 
@@ -205,7 +204,7 @@ async def get_recommendations_by_region(
         select(Listing, Apartment, AnalysisResult)
         .join(Apartment, Listing.apartment_id == Apartment.id)
         .join(AnalysisResult, AnalysisResult.listing_id == Listing.id)
-        .where(Listing.is_active == True)
+        .where(Listing.is_active.is_(True))
         .where(Apartment.dong_code == dong_code)
         .order_by(AnalysisResult.recommendation_score.desc())
         .limit(limit)

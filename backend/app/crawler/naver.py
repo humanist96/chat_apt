@@ -3,11 +3,8 @@
 This module provides a crawler for collecting property listing data
 from Naver Real Estate (land.naver.com) using their internal API endpoints.
 """
-import re
 from typing import List, Optional, Dict, Any
 from dataclasses import dataclass
-from datetime import datetime
-from urllib.parse import urlencode
 
 import httpx
 

@@ -6,11 +6,10 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy import select, delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import joinedload
 from pydantic import BaseModel
 
 from app.database import get_db
-from app.models.user import UserFavoriteListing, UserFavoriteRegion, UserProfile
+from app.models.user import UserFavoriteListing, UserFavoriteRegion
 from app.models.apartment import Listing, Apartment
 from app.auth.jwt import get_current_user, AuthenticatedUser
 

@@ -52,12 +52,28 @@ app = FastAPI(
 
 # Middleware (order matters - first added = outermost)
 # 1. CORS (outermost)
+# Build allowed origins from settings
+_cors_origins = []
+if settings.debug:
+    # Development: allow localhost
+    _cors_origins = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ]
+else:
+    # Production: use configured frontend URL
+    _cors_origins = [
+        settings.frontend_url,
+        "https://chat-apt.com",
+        "https://www.chat-apt.com",
+    ]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure properly in production
+    allow_origins=_cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Requested-With"],
 )
 
 # 2. Rate limiting (after auth, before handlers)
@@ -80,7 +96,7 @@ async def health_check():
 
 
 # Import and include routers
-from app.api import apartments, transactions, listings, analysis, recommendations, payments, alerts, search, auth, favorites
+from app.api import apartments, transactions, listings, analysis, recommendations, payments, alerts, search, auth, favorites, monitoring  # noqa: E402
 
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(apartments.router, prefix="/api/apartments", tags=["apartments"])
@@ -92,3 +108,4 @@ app.include_router(payments.router, prefix="/api/payments", tags=["payments"])
 app.include_router(alerts.router, prefix="/api/alerts", tags=["alerts"])
 app.include_router(search.router, prefix="/api/search", tags=["search"])
 app.include_router(favorites.router, prefix="/api/favorites", tags=["favorites"])
+app.include_router(monitoring.router, prefix="/api/monitoring", tags=["monitoring"])

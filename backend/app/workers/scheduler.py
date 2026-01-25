@@ -8,15 +8,13 @@ This module handles scheduled jobs for:
 """
 import asyncio
 from datetime import datetime, date, timedelta
-from typing import List, Optional
 import logging
 
-from app.crawler.naver import NaverRealEstateCrawler, NaverListing
+from app.crawler.naver import NaverRealEstateCrawler
 from app.services.public_data_api import PublicDataAPIClient, REGION_CODES
 from app.services.notifications import get_notification_service
-from app.services.cache import get_cache_service, CacheKeys
+from app.services.cache import get_cache_service
 from app.services.sync import run_sync_job
-from app.analysis.comparison import ComparisonAnalyzer
 from app.config import get_settings
 
 # Configure logging
@@ -144,9 +142,8 @@ class DailyCollectionJob:
         """Run analysis on collected data."""
         logger.info("Running analysis on collected data...")
 
-        analyzer = ComparisonAnalyzer()
-
         # TODO: Fetch listings from database and run analysis
+        # analyzer = ComparisonAnalyzer()
         # listings = await self.get_new_listings()
         # for listing in listings:
         #     report = analyzer.generate_report(...)

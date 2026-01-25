@@ -9,7 +9,7 @@ import xml.etree.ElementTree as ET
 from datetime import date
 from typing import Optional, List
 from dataclasses import dataclass
-from urllib.parse import urlencode, unquote
+from urllib.parse import unquote
 
 import httpx
 
@@ -135,7 +135,7 @@ class PublicDataAPIClient:
             try:
                 transaction = self._parse_item(item, dong_code)
                 transactions.append(transaction)
-            except (ValueError, TypeError) as e:
+            except (ValueError, TypeError):
                 # Skip invalid records but log them
                 continue
 

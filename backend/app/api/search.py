@@ -1,9 +1,8 @@
 """Search API endpoints using OpenSearch."""
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
-from app.auth import get_current_user
 from app.services.opensearch import (
     OpenSearchClient,
     ApartmentSearchService,

@@ -5,9 +5,8 @@ from uuid import UUID
 
 from sqlalchemy import String, Integer, Boolean, ForeignKey, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import UUID as PGUUID
 
-from app.database import Base
+from app.database import Base, GUID
 
 if TYPE_CHECKING:
     from app.models.user import UserProfile
@@ -19,7 +18,7 @@ class Subscription(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("user_profiles.id", ondelete="CASCADE"),
+        GUID(), ForeignKey("user_profiles.id", ondelete="CASCADE"),
         index=True
     )
     plan: Mapped[str] = mapped_column(String(20), nullable=False)  # basic, premium
@@ -50,7 +49,7 @@ class PaymentHistory(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("user_profiles.id"),
+        GUID(), ForeignKey("user_profiles.id"),
         index=True
     )
     subscription_id: Mapped[Optional[int]] = mapped_column(

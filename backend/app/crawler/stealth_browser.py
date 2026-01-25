@@ -6,7 +6,7 @@ anti-detection features for crawling protected websites.
 import asyncio
 import random
 import logging
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any
 from contextlib import asynccontextmanager
 
 from app.crawler.anti_abuse import USER_AGENTS, AntiAbuseManager
