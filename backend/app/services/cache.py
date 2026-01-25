@@ -8,10 +8,8 @@ This module provides:
 """
 from typing import Optional, Any, Callable, TypeVar
 from functools import wraps
-from datetime import timedelta
 import json
 import hashlib
-import asyncio
 import logging
 
 from app.config import get_settings
@@ -83,6 +81,10 @@ class UpstashRedisClient:
     async def expireat(self, key: str, timestamp: int) -> int:
         """Set expiration timestamp."""
         return await self._request("EXPIREAT", key, timestamp) or 0
+
+    async def expire(self, key: str, seconds: int) -> int:
+        """Set expiration in seconds."""
+        return await self._request("EXPIRE", key, seconds) or 0
 
     async def ping(self) -> bool:
         """Ping server."""
@@ -175,8 +177,8 @@ class CacheService:
                 value = await redis.get(key)
                 if value:
                     return json.loads(value)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"Cache get failed for key {key}: {e}")
 
         # Fallback to memory cache
         if key in self._memory_cache:
@@ -212,8 +214,8 @@ class CacheService:
             try:
                 await redis.setex(key, ttl, json.dumps(value))
                 return True
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"Cache set failed for key {key}: {e}")
 
         # Fallback to memory cache
         import time
@@ -235,8 +237,8 @@ class CacheService:
         if redis:
             try:
                 await redis.delete(key)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"Cache delete failed for key {key}: {e}")
 
         # Also remove from memory cache
         self._memory_cache.pop(key, None)
@@ -262,8 +264,8 @@ class CacheService:
                     keys.append(key)
                 if keys:
                     count = await redis.delete(*keys)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"Cache delete_pattern failed for pattern {pattern}: {e}")
 
         # Also remove from memory cache
         pattern_prefix = pattern.rstrip("*")
@@ -285,8 +287,8 @@ class CacheService:
         if redis:
             try:
                 return await redis.exists(key) > 0
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"Cache exists check failed for key {key}: {e}")
 
         return key in self._memory_cache
 

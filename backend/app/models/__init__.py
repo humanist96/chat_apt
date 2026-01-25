@@ -7,6 +7,7 @@ from app.models.apartment import (
     SimilarApartment,
     ComparisonAnalysis,
     MonthlyPriceCache,
+    MatchingLog,
 )
 from app.models.user import (
     UserProfile,
@@ -27,6 +28,7 @@ __all__ = [
     "SimilarApartment",
     "ComparisonAnalysis",
     "MonthlyPriceCache",
+    "MatchingLog",
     "UserProfile",
     "UserFavoriteRegion",
     "UserFavoriteListing",

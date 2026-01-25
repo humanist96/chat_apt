@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 
 from app.database import get_db
-from app.models.apartment import Listing, Apartment
+from app.models.apartment import Listing
 
 
 router = APIRouter()

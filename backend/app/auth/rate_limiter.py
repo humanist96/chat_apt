@@ -4,7 +4,7 @@ from typing import Optional, Tuple
 from dataclasses import dataclass
 import logging
 
-from fastapi import HTTPException, status, Request
+from fastapi import HTTPException, status
 
 from app.config import get_settings
 from app.services.cache import UpstashRedisClient
@@ -127,7 +127,7 @@ class RateLimiter:
 
     def _get_midnight_timestamp(self) -> int:
         """Get timestamp for midnight (next day)."""
-        from datetime import datetime, timedelta
+        from datetime import timedelta
         tomorrow = datetime.now().replace(
             hour=0, minute=0, second=0, microsecond=0
         ) + timedelta(days=1)
@@ -243,7 +243,7 @@ async def check_rate_limit(
         if remaining == 0 and limiter._get_limit(tier, endpoint) == 0:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"This feature requires a paid subscription",
+                detail="This feature requires a paid subscription",
             )
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,

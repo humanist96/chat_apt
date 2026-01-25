@@ -5,16 +5,15 @@ from uuid import UUID
 
 from sqlalchemy import String, Integer, Text, ForeignKey, Index, UniqueConstraint, Date
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import UUID as PGUUID
 
-from app.database import Base
+from app.database import Base, GUID
 
 
 class UserProfile(Base):
     """User profile table (extends Supabase auth.users)."""
     __tablename__ = "user_profiles"
 
-    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
+    id: Mapped[UUID] = mapped_column(GUID(), primary_key=True)
     email: Mapped[Optional[str]] = mapped_column(String(255))
     name: Mapped[Optional[str]] = mapped_column(String(100))
     avatar_url: Mapped[Optional[str]] = mapped_column(Text)
@@ -46,7 +45,7 @@ class UserFavoriteRegion(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("user_profiles.id", ondelete="CASCADE"),
+        GUID(), ForeignKey("user_profiles.id", ondelete="CASCADE"),
         index=True
     )
     dong_code: Mapped[Optional[str]] = mapped_column(String(10))
@@ -63,7 +62,7 @@ class UserFavoriteListing(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("user_profiles.id", ondelete="CASCADE"),
+        GUID(), ForeignKey("user_profiles.id", ondelete="CASCADE"),
         index=True
     )
     listing_id: Mapped[int] = mapped_column(
@@ -85,7 +84,7 @@ class UserApiUsage(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("user_profiles.id"),
+        GUID(), ForeignKey("user_profiles.id"),
         index=True
     )
     endpoint: Mapped[str] = mapped_column(String(100))
@@ -102,4 +101,4 @@ class UserApiUsage(Base):
 
 
 # Import here to avoid circular imports
-from app.models.payment import Subscription
+from app.models.payment import Subscription  # noqa: E402

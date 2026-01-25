@@ -3,6 +3,7 @@
 import { ReactNode } from 'react'
 import { AuthProvider } from '@/contexts/AuthContext'
 import { ToastProvider } from '@/components/ui'
+import { ErrorBoundary } from '@/components/ErrorBoundary'
 
 interface ProvidersProps {
   children: ReactNode
@@ -10,8 +11,10 @@ interface ProvidersProps {
 
 export function Providers({ children }: ProvidersProps) {
   return (
-    <AuthProvider>
-      <ToastProvider>{children}</ToastProvider>
-    </AuthProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <ToastProvider>{children}</ToastProvider>
+      </AuthProvider>
+    </ErrorBoundary>
   )
 }

@@ -185,3 +185,30 @@ class MonthlyPriceCache(Base):
         ),
         Index("idx_monthly_price_cache_apartment_month", "apartment_id", "year_month"),
     )
+
+
+class MatchingLog(Base):
+    """Matching log for monitoring match quality."""
+    __tablename__ = "matching_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    match_type: Mapped[str] = mapped_column(String(50), nullable=False)  # 'complex', 'listing'
+    source_id: Mapped[str] = mapped_column(String(100), nullable=False)  # naver_complex_no or article_no
+    source_name: Mapped[Optional[str]] = mapped_column(String(200))
+    target_id: Mapped[Optional[int]] = mapped_column(Integer)  # apartment_id
+    target_name: Mapped[Optional[str]] = mapped_column(String(200))
+    name_score: Mapped[Optional[Decimal]] = mapped_column(DECIMAL(5, 3))
+    address_score: Mapped[Optional[Decimal]] = mapped_column(DECIMAL(5, 3))
+    area_score: Mapped[Optional[Decimal]] = mapped_column(DECIMAL(5, 3))
+    match_score: Mapped[Optional[Decimal]] = mapped_column(DECIMAL(5, 3))
+    match_method: Mapped[Optional[str]] = mapped_column(String(50))  # 'name', 'address', 'combined'
+    confidence: Mapped[Optional[str]] = mapped_column(String(20))  # 'high', 'medium', 'low', 'none'
+    success: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    failure_reason: Mapped[Optional[str]] = mapped_column(String(500))
+    dong_code: Mapped[Optional[str]] = mapped_column(String(10), index=True)
+    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+
+    __table_args__ = (
+        Index("idx_matching_logs_type_created", "match_type", "created_at"),
+        Index("idx_matching_logs_success", "success", "created_at"),
+    )

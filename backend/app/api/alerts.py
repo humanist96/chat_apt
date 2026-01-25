@@ -3,9 +3,8 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
-from app.auth import get_current_user, AuthenticatedUser, require_tier
+from app.auth import get_current_user, AuthenticatedUser
 from app.services.notifications import (
-    NotificationService,
     AlertCondition,
     NotificationPayload,
     get_notification_service,

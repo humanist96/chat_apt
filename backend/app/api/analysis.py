@@ -177,25 +177,51 @@ async def get_comparison_report(
     )
     area_pyeong = analyzer.area_to_pyeong(area_m2)
 
-    # Get similar prices from cache
+    # Batch load price data for all similar apartments (fixes N+1 query)
+    similar_apt_ids = [similar_apt.id for _, similar_apt in similar_rows]
+
+    # Get recent 6 months of price data for all similar apartments in one query
+    from sqlalchemy import func
+
+    # Subquery to get the 6 most recent year_months per apartment
+    subquery = (
+        select(
+            MonthlyPriceCache.apartment_id,
+            MonthlyPriceCache.year_month,
+            MonthlyPriceCache.avg_price_per_pyeong,
+            func.row_number().over(
+                partition_by=MonthlyPriceCache.apartment_id,
+                order_by=MonthlyPriceCache.year_month.desc()
+            ).label('rn')
+        )
+        .where(MonthlyPriceCache.apartment_id.in_(similar_apt_ids))
+        .subquery()
+    )
+
+    price_result = await db.execute(
+        select(subquery.c.apartment_id, subquery.c.avg_price_per_pyeong)
+        .where(subquery.c.rn <= 6)
+    )
+    price_rows = price_result.all()
+
+    # Group prices by apartment_id
+    prices_by_apt: dict[int, list[int]] = {}
+    for apt_id, price_pp in price_rows:
+        if apt_id not in prices_by_apt:
+            prices_by_apt[apt_id] = []
+        if price_pp:
+            prices_by_apt[apt_id].append(int(price_pp))
+
+    # Build comparison results
     comparison_results = []
     similar_prices_sum = 0
     similar_count = 0
 
-    for sim, similar_apt in similar_rows:
-        # Get recent price for similar apartment
-        price_result = await db.execute(
-            select(MonthlyPriceCache)
-            .where(MonthlyPriceCache.apartment_id == similar_apt.id)
-            .order_by(MonthlyPriceCache.year_month.desc())
-            .limit(6)
-        )
-        price_rows = price_result.scalars().all()
+    for _, similar_apt in similar_rows:
+        price_list = prices_by_apt.get(similar_apt.id, [])
 
-        if price_rows:
-            avg_price_pp = int(
-                sum(p.avg_price_per_pyeong or 0 for p in price_rows) / len(price_rows)
-            )
+        if price_list:
+            avg_price_pp = int(sum(price_list) / len(price_list))
             if avg_price_pp > 0:
                 gap_percent = ((price_per_pyeong - avg_price_pp) / avg_price_pp) * 100
 

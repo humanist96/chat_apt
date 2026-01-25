@@ -5,7 +5,6 @@ This module provides:
 - Real-time aggregations for price analytics
 - Vector search for similar apartments (future)
 """
-import asyncio
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass, field

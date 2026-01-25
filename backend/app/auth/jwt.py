@@ -1,16 +1,22 @@
 """JWT authentication utilities."""
+import logging
 from typing import Optional
 from dataclasses import dataclass
 from functools import wraps
 
-from fastapi import Depends, HTTPException, status, Request
+from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import jwt
+from jwt import PyJWKClient
 
 from app.config import get_settings
 
 
+logger = logging.getLogger(__name__)
 security = HTTPBearer(auto_error=False)
+
+# Cache for JWKS client
+_jwks_client: Optional[PyJWKClient] = None
 
 
 @dataclass
@@ -27,8 +33,23 @@ class JWTAuth:
     def __init__(self):
         settings = get_settings()
         self.supabase_url = settings.supabase_url
-        # Supabase JWT secret is derived from the project JWT secret
-        # In production, you'd verify against Supabase's JWKS endpoint
+        self._jwks_client: Optional[PyJWKClient] = None
+
+    def _get_jwks_client(self) -> PyJWKClient:
+        """Get or create JWKS client for Supabase.
+
+        Supabase exposes JWKS at /.well-known/jwks.json
+        """
+        global _jwks_client
+        if _jwks_client is None:
+            if not self.supabase_url:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Supabase URL not configured",
+                )
+            jwks_url = f"{self.supabase_url}/auth/v1/.well-known/jwks.json"
+            _jwks_client = PyJWKClient(jwks_url, cache_keys=True)
+        return _jwks_client
 
     def decode_token(self, token: str) -> dict:
         """Decode and verify JWT token.
@@ -43,24 +64,49 @@ class JWTAuth:
             HTTPException: If token is invalid or expired
         """
         try:
-            # For Supabase, we can decode without verification for user info
-            # In production, use proper verification with Supabase JWKS
+            # Get the signing key from Supabase JWKS
+            jwks_client = self._get_jwks_client()
+            signing_key = jwks_client.get_signing_key_from_jwt(token)
+
+            # Decode and verify the token
             payload = jwt.decode(
                 token,
-                options={"verify_signature": False},  # TODO: Enable in production
-                algorithms=["HS256", "RS256"],
+                signing_key.key,
+                algorithms=["RS256"],
+                audience="authenticated",
+                options={
+                    "verify_signature": True,
+                    "verify_exp": True,
+                    "verify_aud": True,
+                    "require": ["sub", "exp", "aud"],
+                },
             )
             return payload
+
+        except jwt.exceptions.PyJWKClientError as e:
+            logger.warning(f"JWKS client error: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Unable to verify token signature",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
         except jwt.ExpiredSignatureError:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Token has expired",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-        except jwt.InvalidTokenError as e:
+        except jwt.InvalidAudienceError:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail=f"Invalid token: {str(e)}",
+                detail="Invalid token audience",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        except jwt.InvalidTokenError as e:
+            logger.warning(f"Invalid token: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token",
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
@@ -82,8 +128,7 @@ class JWTAuth:
                 detail="Invalid token: missing user ID",
             )
 
-        # Extract user metadata
-        user_metadata = payload.get("user_metadata", {})
+        # Extract app metadata for membership tier
         app_metadata = payload.get("app_metadata", {})
 
         return AuthenticatedUser(

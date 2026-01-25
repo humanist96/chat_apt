@@ -3,8 +3,7 @@
 This module handles data replication from PostgreSQL (primary)
 to OpenSearch (search/analytics).
 """
-import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass
 import logging

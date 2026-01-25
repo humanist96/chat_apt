@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     # App
     app_name: str = "Chat APT API"
     debug: bool = False
+    frontend_url: str = "https://chat-apt.com"
 
     # Database (Supabase)
     database_url: str = ""
@@ -28,11 +29,11 @@ class Settings(BaseSettings):
     toss_client_key: str = ""
     toss_secret_key: str = ""
 
-    # OpenSearch
-    opensearch_host: str = "49.247.172.187"
+    # OpenSearch (no defaults - must be configured in .env)
+    opensearch_host: str = ""
     opensearch_port: int = 9200
-    opensearch_username: str = "admin"
-    opensearch_password: str = "admin"
+    opensearch_username: str = ""
+    opensearch_password: str = ""
 
     # Crawler
     proxy_list: str = ""  # comma-separated proxy URLs

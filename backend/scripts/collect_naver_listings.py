@@ -7,6 +7,8 @@ SQLite에 저장된 아파트 정보와 매칭하여 저장합니다.
 - 세션 초기화 (쿠키 획득)로 차단 회피
 - 지역 순서 랜덤화로 패턴 회피
 - 보수적인 요청 간격 설정
+- 개선된 매칭 모듈 사용 (이름+주소+면적 복합 매칭)
+- 매칭 품질 로깅
 
 Usage:
     python scripts/collect_naver_listings.py
@@ -17,6 +19,7 @@ import sys
 import logging
 import random
 from datetime import datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import List, Dict, Optional
 from difflib import SequenceMatcher
@@ -31,6 +34,9 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sess
 
 from app.crawler.naver import NaverRealEstateCrawler, NaverListing
 from app.crawler.anti_abuse import AntiAbuseManager, RequestDelay
+from app.matching import MatchingService, MatchingConfig, MatchResult
+from app.matching.name_matcher import NameMatcher
+from app.models.apartment import MatchingLog
 
 logging.basicConfig(
     level=logging.INFO,
@@ -58,22 +64,28 @@ REGION_BOUNDS = {
 }
 
 
+# Initialize matching service with improved configuration
+MATCHING_CONFIG = MatchingConfig(
+    name_weight=0.5,
+    address_weight=0.3,
+    area_weight=0.2,
+    high_confidence_threshold=0.85,
+    medium_confidence_threshold=0.7,
+    min_match_threshold=0.6,
+    name_min_score=0.6,
+)
+MATCHING_SERVICE = MatchingService(config=MATCHING_CONFIG)
+
+
+# Legacy functions kept for backwards compatibility
 def normalize_name(name: str) -> str:
-    """Normalize apartment name for comparison."""
-    import re
-    name = name.strip()
-    name = re.sub(r'\([^)]*\)', '', name)
-    for suffix in ['아파트', '단지', '차', '동']:
-        name = name.replace(suffix, '')
-    name = re.sub(r'[^가-힣a-zA-Z0-9]', '', name)
-    return name.lower()
+    """Normalize apartment name for comparison (legacy)."""
+    return MATCHING_SERVICE.name_matcher.normalize_name(name)
 
 
 def similarity_score(name1: str, name2: str) -> float:
-    """Calculate similarity between two apartment names."""
-    n1 = normalize_name(name1)
-    n2 = normalize_name(name2)
-    return SequenceMatcher(None, n1, n2).ratio()
+    """Calculate similarity between two apartment names (legacy)."""
+    return MATCHING_SERVICE.name_matcher.calculate_similarity(name1, name2)
 
 
 async def get_apartments_by_dong(session: AsyncSession, dong_code: str) -> List[Dict]:
@@ -162,19 +174,80 @@ async def save_listing(
 
 async def match_listing_to_apartment(
     listing: NaverListing,
-    apartments: List[Dict]
-) -> Optional[int]:
-    """Match a listing to an apartment by name similarity."""
+    apartments: List[Dict],
+    dong_code: str,
+) -> tuple[Optional[int], Optional[MatchResult]]:
+    """Match a listing to an apartment using improved matching.
+
+    Returns:
+        Tuple of (apartment_id, match_result)
+    """
     best_match = None
-    best_score = 0
+    best_result = None
+    best_score = 0.0
 
     for apt in apartments:
-        score = similarity_score(listing.complex_name, apt["name"])
-        if score > best_score and score >= 0.6:
-            best_score = score
-            best_match = apt["id"]
+        result = MATCHING_SERVICE.match(
+            source_name=listing.complex_name,
+            target_name=apt["name"],
+            source_dong_code=dong_code,
+            target_dong_code=apt.get("dong_code"),
+            source_area=listing.area_exclusive,
+            target_apartment_id=apt["id"],
+        )
 
-    return best_match
+        if result.total_score > best_score:
+            best_score = result.total_score
+            best_match = apt["id"]
+            best_result = result
+
+    if best_result and best_result.total_score >= MATCHING_CONFIG.min_match_threshold:
+        return (best_match, best_result)
+
+    return (None, best_result)
+
+
+async def log_matching_result(
+    session: AsyncSession,
+    listing: NaverListing,
+    dong_code: str,
+    match_result: Optional[MatchResult],
+    success: bool,
+    failure_reason: Optional[str] = None,
+):
+    """Log matching result for monitoring."""
+    try:
+        await session.execute(
+            text("""
+                INSERT INTO matching_logs
+                (match_type, source_id, source_name, target_id, target_name,
+                 name_score, address_score, area_score, match_score,
+                 match_method, confidence, success, failure_reason, dong_code, created_at)
+                VALUES
+                (:match_type, :source_id, :source_name, :target_id, :target_name,
+                 :name_score, :address_score, :area_score, :match_score,
+                 :match_method, :confidence, :success, :failure_reason, :dong_code, :created_at)
+            """),
+            {
+                "match_type": "listing",
+                "source_id": listing.article_no,
+                "source_name": listing.complex_name,
+                "target_id": match_result.apartment_id if match_result else None,
+                "target_name": match_result.target_name if match_result else None,
+                "name_score": match_result.name_score if match_result else None,
+                "address_score": match_result.address_score if match_result else None,
+                "area_score": match_result.area_score if match_result else None,
+                "match_score": match_result.total_score if match_result else None,
+                "match_method": match_result.match_method if match_result else None,
+                "confidence": match_result.confidence.value if match_result else None,
+                "success": success,
+                "failure_reason": failure_reason,
+                "dong_code": dong_code,
+                "created_at": datetime.utcnow(),
+            }
+        )
+    except Exception as e:
+        logger.debug(f"Failed to log matching result: {e}")
 
 
 async def main():
@@ -194,6 +267,7 @@ async def main():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 apartment_id INTEGER NOT NULL,
                 article_no VARCHAR(30) UNIQUE,
+                naver_complex_no VARCHAR(20),
                 trade_type VARCHAR(10),
                 price INTEGER NOT NULL,
                 area DECIMAL(10, 2),
@@ -206,6 +280,28 @@ async def main():
                 created_at DATETIME NOT NULL,
                 updated_at DATETIME NOT NULL,
                 FOREIGN KEY(apartment_id) REFERENCES apartments(id)
+            )
+        """))
+
+        # Create matching_logs table for monitoring
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS matching_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                match_type VARCHAR(50) NOT NULL,
+                source_id VARCHAR(100) NOT NULL,
+                source_name VARCHAR(200),
+                target_id INTEGER,
+                target_name VARCHAR(200),
+                name_score DECIMAL(5, 3),
+                address_score DECIMAL(5, 3),
+                area_score DECIMAL(5, 3),
+                match_score DECIMAL(5, 3),
+                match_method VARCHAR(50),
+                confidence VARCHAR(20),
+                success BOOLEAN NOT NULL DEFAULT 0,
+                failure_reason VARCHAR(500),
+                dong_code VARCHAR(10),
+                created_at DATETIME NOT NULL
             )
         """))
 
@@ -269,9 +365,11 @@ async def main():
                     logger.error(f"수집 오류: {e}")
                     continue
 
-                # Match and save listings
+                # Match and save listings with improved matching
                 for listing in listings:
-                    apt_id = await match_listing_to_apartment(listing, apartments)
+                    apt_id, match_result = await match_listing_to_apartment(
+                        listing, apartments, dong_code
+                    )
 
                     if apt_id:
                         is_new = await save_listing(session, apt_id, listing)
@@ -280,8 +378,34 @@ async def main():
                         else:
                             total_stats["listings_updated"] += 1
                         total_stats["matched"] += 1
+
+                        # Log successful match
+                        await log_matching_result(
+                            session, listing, dong_code, match_result,
+                            success=True
+                        )
+
+                        if match_result:
+                            logger.debug(
+                                f"  매칭: {listing.complex_name} → "
+                                f"{match_result.target_name} "
+                                f"(score={match_result.total_score:.2f}, "
+                                f"conf={match_result.confidence.value})"
+                            )
                     else:
                         total_stats["unmatched"] += 1
+
+                        # Log failed match
+                        failure_reason = "No match found above threshold"
+                        if match_result:
+                            failure_reason = (
+                                f"Best score {match_result.total_score:.2f} "
+                                f"< threshold {MATCHING_CONFIG.min_match_threshold}"
+                            )
+                        await log_matching_result(
+                            session, listing, dong_code, match_result,
+                            success=False, failure_reason=failure_reason
+                        )
 
                 await session.commit()
 
@@ -292,6 +416,18 @@ async def main():
 
         # Final stats
         listing_count = await session.execute(text("SELECT COUNT(*) FROM listings"))
+        listing_total = listing_count.scalar()
+
+        # Get matching quality stats for this run
+        match_stats = await session.execute(text("""
+            SELECT
+                COUNT(*) as total,
+                SUM(CASE WHEN success = 1 THEN 1 ELSE 0 END) as success,
+                AVG(match_score) as avg_score
+            FROM matching_logs
+            WHERE created_at > datetime('now', '-1 hour')
+        """))
+        match_row = match_stats.first()
 
     logger.info("\n" + "=" * 60)
     logger.info("수집 완료!")
@@ -299,7 +435,12 @@ async def main():
     logger.info(f"  - 업데이트된 호가: {total_stats['listings_updated']}건")
     logger.info(f"  - 매칭 성공: {total_stats['matched']}건")
     logger.info(f"  - 매칭 실패: {total_stats['unmatched']}건")
-    logger.info(f"  - 전체 호가: {listing_count.scalar()}건")
+    if total_stats['matched'] + total_stats['unmatched'] > 0:
+        match_rate = total_stats['matched'] / (total_stats['matched'] + total_stats['unmatched']) * 100
+        logger.info(f"  - 매칭률: {match_rate:.1f}%")
+    if match_row and match_row.avg_score:
+        logger.info(f"  - 평균 매칭 점수: {match_row.avg_score:.3f}")
+    logger.info(f"  - 전체 호가: {listing_total}건")
     logger.info("=" * 60)
 
     await engine.dispose()
