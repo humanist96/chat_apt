@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: chat-apt-backend
+    runtime: docker
+    region: singapore
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
+      - key: PUBLIC_DATA_API_KEY
+        sync: false
+      - key: DEBUG
+        value: "false"
+    healthCheckPath: /health
+    autoDeploy: true
