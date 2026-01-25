@@ -1,4 +1,5 @@
 """Main FastAPI application."""
+import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -7,8 +8,30 @@ from app.config import get_settings
 from app.database import init_db
 from app.auth.middleware import AuthMiddleware, RateLimitMiddleware
 
-
+logger = logging.getLogger(__name__)
 settings = get_settings()
+
+# Initialize Sentry for error tracking
+if settings.sentry_dsn:
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.fastapi import FastApiIntegration
+        from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
+
+        sentry_sdk.init(
+            dsn=settings.sentry_dsn,
+            integrations=[
+                FastApiIntegration(transaction_style="endpoint"),
+                SqlalchemyIntegration(),
+            ],
+            traces_sample_rate=0.1 if not settings.debug else 1.0,
+            profiles_sample_rate=0.1 if not settings.debug else 1.0,
+            environment="development" if settings.debug else "production",
+            send_default_pii=False,
+        )
+        logger.info("Sentry error tracking initialized")
+    except ImportError:
+        logger.warning("Sentry SDK not installed, error tracking disabled")
 
 
 @asynccontextmanager
@@ -57,8 +80,9 @@ async def health_check():
 
 
 # Import and include routers
-from app.api import apartments, transactions, listings, analysis, recommendations, payments, alerts, search
+from app.api import apartments, transactions, listings, analysis, recommendations, payments, alerts, search, auth, favorites
 
+app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(apartments.router, prefix="/api/apartments", tags=["apartments"])
 app.include_router(transactions.router, prefix="/api/transactions", tags=["transactions"])
 app.include_router(listings.router, prefix="/api/listings", tags=["listings"])
@@ -67,3 +91,4 @@ app.include_router(recommendations.router, prefix="/api/recommendations", tags=[
 app.include_router(payments.router, prefix="/api/payments", tags=["payments"])
 app.include_router(alerts.router, prefix="/api/alerts", tags=["alerts"])
 app.include_router(search.router, prefix="/api/search", tags=["search"])
+app.include_router(favorites.router, prefix="/api/favorites", tags=["favorites"])

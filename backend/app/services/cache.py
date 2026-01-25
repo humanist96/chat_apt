@@ -1,7 +1,8 @@
 """Caching service for performance optimization.
 
 This module provides:
-- Redis-based caching (production)
+- Upstash Redis REST API caching (production, serverless-optimized)
+- Standard Redis caching (alternative)
 - In-memory caching (fallback)
 - Cache decorators for API endpoints
 """
@@ -11,15 +12,92 @@ from datetime import timedelta
 import json
 import hashlib
 import asyncio
+import logging
 
 from app.config import get_settings
 
 
 T = TypeVar("T")
+logger = logging.getLogger(__name__)
+
+
+class UpstashRedisClient:
+    """Upstash Redis REST API client for serverless environments."""
+
+    def __init__(self, url: str, token: str):
+        self.url = url.rstrip("/")
+        self.token = token
+        self._session = None
+
+    async def _get_session(self):
+        """Get or create aiohttp session."""
+        if self._session is None:
+            import aiohttp
+            self._session = aiohttp.ClientSession(
+                headers={
+                    "Authorization": f"Bearer {self.token}",
+                    "Content-Type": "application/json",
+                }
+            )
+        return self._session
+
+    async def _request(self, *args) -> Any:
+        """Execute a Redis command via REST API."""
+        session = await self._get_session()
+        try:
+            async with session.post(
+                self.url,
+                json=list(args),
+            ) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    return data.get("result")
+                else:
+                    logger.error(f"Upstash Redis error: {response.status}")
+                    return None
+        except Exception as e:
+            logger.error(f"Upstash Redis request failed: {e}")
+            return None
+
+    async def get(self, key: str) -> Optional[str]:
+        """Get value by key."""
+        return await self._request("GET", key)
+
+    async def setex(self, key: str, ttl: int, value: str) -> bool:
+        """Set value with expiration."""
+        result = await self._request("SETEX", key, ttl, value)
+        return result == "OK"
+
+    async def delete(self, key: str) -> int:
+        """Delete key."""
+        return await self._request("DEL", key) or 0
+
+    async def exists(self, key: str) -> int:
+        """Check if key exists."""
+        return await self._request("EXISTS", key) or 0
+
+    async def incr(self, key: str) -> int:
+        """Increment value."""
+        return await self._request("INCR", key) or 0
+
+    async def expireat(self, key: str, timestamp: int) -> int:
+        """Set expiration timestamp."""
+        return await self._request("EXPIREAT", key, timestamp) or 0
+
+    async def ping(self) -> bool:
+        """Ping server."""
+        result = await self._request("PING")
+        return result == "PONG"
+
+    async def close(self):
+        """Close session."""
+        if self._session:
+            await self._session.close()
+            self._session = None
 
 
 class CacheService:
-    """Caching service with Redis support and in-memory fallback."""
+    """Caching service with Upstash/Redis support and in-memory fallback."""
 
     # Default TTL values (in seconds)
     TTL_SHORT = 60  # 1 minute
@@ -29,11 +107,40 @@ class CacheService:
 
     def __init__(self):
         self._redis = None
+        self._upstash = None
         self._memory_cache: dict = {}
         self._memory_ttl: dict = {}
 
     async def _get_redis(self):
-        """Get Redis connection (lazy initialization)."""
+        """Get Redis connection (lazy initialization).
+
+        Priority:
+        1. Upstash REST API (serverless-optimized)
+        2. Standard Redis
+        3. In-memory fallback
+        """
+        # Try Upstash REST API first
+        if self._upstash is None:
+            settings = get_settings()
+            if settings.upstash_redis_rest_url and settings.upstash_redis_rest_token:
+                try:
+                    self._upstash = UpstashRedisClient(
+                        settings.upstash_redis_rest_url,
+                        settings.upstash_redis_rest_token,
+                    )
+                    if await self._upstash.ping():
+                        logger.info("Connected to Upstash Redis (REST API)")
+                        return self._upstash
+                    else:
+                        self._upstash = False
+                except Exception as e:
+                    logger.warning(f"Upstash connection failed: {e}")
+                    self._upstash = False
+
+        if self._upstash and self._upstash is not False:
+            return self._upstash
+
+        # Fallback to standard Redis
         if self._redis is None:
             settings = get_settings()
             if settings.redis_url:
@@ -44,11 +151,13 @@ class CacheService:
                         encoding="utf-8",
                         decode_responses=True,
                     )
-                    # Test connection
                     await self._redis.ping()
-                except Exception:
-                    self._redis = False  # Mark as unavailable
-        return self._redis if self._redis else None
+                    logger.info("Connected to standard Redis")
+                except Exception as e:
+                    logger.warning(f"Redis connection failed: {e}")
+                    self._redis = False
+
+        return self._redis if self._redis and self._redis is not False else None
 
     async def get(self, key: str) -> Optional[Any]:
         """Get value from cache.

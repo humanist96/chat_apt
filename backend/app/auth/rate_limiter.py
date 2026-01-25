@@ -2,10 +2,15 @@
 from datetime import datetime, date
 from typing import Optional, Tuple
 from dataclasses import dataclass
+import logging
 
 from fastapi import HTTPException, status, Request
 
 from app.config import get_settings
+from app.services.cache import UpstashRedisClient
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -33,9 +38,33 @@ class RateLimiter:
     def __init__(self):
         self._memory_store: dict = {}  # Fallback in-memory store
         self._redis = None
+        self._upstash = None
 
     async def _get_redis(self):
-        """Get Redis connection (lazy initialization)."""
+        """Get Redis connection (lazy initialization).
+
+        Priority: Upstash REST API > Standard Redis > In-memory
+        """
+        # Try Upstash REST API first
+        if self._upstash is None:
+            settings = get_settings()
+            if settings.upstash_redis_rest_url and settings.upstash_redis_rest_token:
+                try:
+                    self._upstash = UpstashRedisClient(
+                        settings.upstash_redis_rest_url,
+                        settings.upstash_redis_rest_token,
+                    )
+                    if await self._upstash.ping():
+                        return self._upstash
+                    else:
+                        self._upstash = False
+                except Exception:
+                    self._upstash = False
+
+        if self._upstash and self._upstash is not False:
+            return self._upstash
+
+        # Fallback to standard Redis
         if self._redis is None:
             settings = get_settings()
             if settings.redis_url:
@@ -47,8 +76,9 @@ class RateLimiter:
                         decode_responses=True,
                     )
                 except Exception:
-                    self._redis = False  # Mark as unavailable
-        return self._redis if self._redis else None
+                    self._redis = False
+
+        return self._redis if self._redis and self._redis is not False else None
 
     def _get_limit(self, tier: str, endpoint: str) -> int:
         """Get the rate limit for a tier and endpoint."""

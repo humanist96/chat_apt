@@ -10,6 +10,7 @@ alembic==1.13.1
 
 # HTTP Client
 httpx>=0.24.0,<0.26
+aiohttp==3.9.1
 beautifulsoup4==4.12.3
 
 # Browser Automation
@@ -39,3 +40,6 @@ supabase==2.3.4
 # Data Collection
 PublicDataReader>=1.0.0
 pandas>=2.0.0
+
+# Error Tracking
+sentry-sdk[fastapi]==1.39.1
